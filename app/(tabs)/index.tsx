@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +13,8 @@ import {
   View,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,6 +28,33 @@ import {
   updateObligation,
 } from "@/lib/api";
 import type { Obligation } from "@/lib/types";
+
+type IconName = ComponentProps<typeof Ionicons>["name"];
+
+const KIND_META: Record<
+  Obligation["kind"],
+  { icon: IconName; label: string; tint: string; wash: string }
+> = {
+  bill: { icon: "receipt-outline", label: "Bill", tint: "#0f766e", wash: "rgba(20,184,166,0.16)" },
+  subscription: {
+    icon: "repeat-outline",
+    label: "Subscription",
+    tint: "#7c3aed",
+    wash: "rgba(124,58,237,0.14)",
+  },
+  document: {
+    icon: "document-text-outline",
+    label: "Document",
+    tint: "#2563eb",
+    wash: "rgba(37,99,235,0.14)",
+  },
+  other: {
+    icon: "sparkles-outline",
+    label: "Other",
+    tint: "#b45309",
+    wash: "rgba(245,158,11,0.18)",
+  },
+};
 
 export default function TimelineScreen() {
   const insets = useSafeAreaInsets();
@@ -255,24 +285,33 @@ export default function TimelineScreen() {
   const renderSwipeActions = useCallback(
     (item: Obligation) => (
       <View style={styles.rowActions}>
-        <Pressable
-          style={[styles.rowActionButton, styles.rowActionEdit]}
-          onPress={() => {
-            closeSwipe(item.id);
-            openEditComposer(item);
-          }}
+        <LinearGradient
+          colors={["rgba(255,255,255,0.96)", "rgba(226,232,240,0.86)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.actionTray}
         >
-          <Text style={styles.rowActionText}>Edit</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.rowActionButton, styles.rowActionDelete]}
-          onPress={() => {
-            closeSwipe(item.id);
-            requestDelete(item);
-          }}
-        >
-          <Text style={styles.rowActionText}>Delete</Text>
-        </Pressable>
+          <Pressable
+            style={[styles.rowActionButton, styles.rowActionEdit]}
+            onPress={() => {
+              closeSwipe(item.id);
+              openEditComposer(item);
+            }}
+          >
+            <Ionicons name="create-outline" size={20} color="#0f172a" />
+            <Text style={styles.rowActionText}>Edit</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.rowActionButton, styles.rowActionDelete]}
+            onPress={() => {
+              closeSwipe(item.id);
+              requestDelete(item);
+            }}
+          >
+            <Ionicons name="trash-outline" size={20} color="#ffffff" />
+            <Text style={[styles.rowActionText, styles.rowActionDeleteText]}>Delete</Text>
+          </Pressable>
+        </LinearGradient>
       </View>
     ),
     [closeSwipe, openEditComposer, requestDelete],
@@ -281,59 +320,115 @@ export default function TimelineScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <StatusBar style="dark" />
+      <LinearGradient
+        pointerEvents="none"
+        colors={["#f8fbff", "#dfe9f7", "#f7efe7"]}
+        locations={[0, 0.58, 1]}
+        style={styles.backgroundWash}
+      />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.heading}>Timeline</Text>
-        <Text style={styles.subheading}>{user?.email}</Text>
-
-        {bannerMessage ? <Text style={styles.bannerText}>{bannerMessage}</Text> : null}
-
-        <View style={styles.summaryRow}>
-          <MetricCard label="Pending" value={summary.pending} />
-          <MetricCard label="Overdue" value={summary.overdue} />
-          <MetricCard label="Done" value={summary.completed} />
+        <View style={styles.headerShell}>
+          <View style={styles.headerTextBlock}>
+            <Text style={styles.kicker}>Personal timeline</Text>
+            <Text style={styles.heading}>Obligations</Text>
+            <Text style={styles.subheading}>{user?.email}</Text>
+          </View>
+          <Pressable style={styles.headerButton} onPress={() => void loadObligations()}>
+            <Ionicons name="sync-outline" size={19} color="#0f172a" />
+          </Pressable>
         </View>
 
-        <Text style={styles.sectionTitle}>Obligations</Text>
+        {bannerMessage ? (
+          <View style={styles.bannerPill}>
+            <View style={styles.liveDot} />
+            <Text style={styles.bannerText}>{bannerMessage}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.summaryRow}>
+          <MetricCard label="Pending" value={summary.pending} tone="#2563eb" icon="time-outline" />
+          <MetricCard label="Overdue" value={summary.overdue} tone="#dc2626" icon="alert-circle-outline" />
+          <MetricCard label="Done" value={summary.completed} tone="#059669" icon="checkmark-done-outline" />
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Upcoming</Text>
+          <Text style={styles.sectionHint}>Swipe left for actions</Text>
+        </View>
         {isLoading ? (
           <View style={styles.emptyCard}>
-            <ActivityIndicator size="small" color="#374151" />
+            <ActivityIndicator size="small" color="#0f766e" />
             <Text style={styles.emptyText}>Loading timeline...</Text>
           </View>
         ) : obligations.length === 0 ? (
           <View style={styles.emptyCard}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="calendar-clear-outline" size={24} color="#0f766e" />
+            </View>
             <Text style={styles.emptyText}>No obligations yet</Text>
           </View>
         ) : (
-          obligations.map((item) => (
-            <Swipeable
-              key={item.id}
-              ref={(ref) => {
-                swipeRefs.current[item.id] = ref;
-              }}
-              renderRightActions={() => renderSwipeActions(item)}
-              overshootRight={false}
-              containerStyle={styles.swipeContainer}
-            >
-              <View style={styles.itemCard}>
-                <View style={styles.glassOverlay} />
-                <View style={styles.itemTopRow}>
-                  <Text style={styles.itemTitle}>{item.title}</Text>
-                  <StatusBadge status={item.status} />
-                </View>
-                <Text style={styles.itemMeta}>
-                  {item.kind.toUpperCase()} • Due {prettyDueLabel(item.dueAt)}
-                </Text>
-                {item.status !== "completed" ? (
-                  <Pressable
-                    style={styles.completeButton}
-                    onPress={() => void markCompleted(item.id)}
-                  >
-                    <Text style={styles.completeButtonText}>Mark completed</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </Swipeable>
-          ))
+          obligations.map((item) => {
+            const meta = KIND_META[item.kind];
+            return (
+              <Swipeable
+                key={item.id}
+                ref={(ref) => {
+                  swipeRefs.current[item.id] = ref;
+                }}
+                renderRightActions={() => renderSwipeActions(item)}
+                overshootRight={false}
+                friction={2}
+                rightThreshold={42}
+                containerStyle={styles.swipeContainer}
+              >
+                <LinearGradient
+                  colors={["rgba(255,255,255,0.92)", "rgba(255,255,255,0.58)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.itemCard}
+                >
+                  <View style={styles.glassGlint} />
+                  <View style={styles.itemTopRow}>
+                    <View style={[styles.kindIcon, { backgroundColor: meta.wash }]}>
+                      <Ionicons name={meta.icon} size={20} color={meta.tint} />
+                    </View>
+                    <View style={styles.itemCopy}>
+                      <Text style={styles.itemTitle} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      <View style={styles.metaRow}>
+                        <Text style={styles.kindText}>{meta.label}</Text>
+                        <View style={styles.metaDot} />
+                        <Text style={styles.itemMeta}>Due {prettyDueLabel(item.dueAt)}</Text>
+                      </View>
+                    </View>
+                    <StatusBadge status={item.status} />
+                  </View>
+                  <View style={styles.itemFooter}>
+                    <View style={styles.swipeCue}>
+                      <Ionicons name="chevron-back" size={13} color="#64748b" />
+                      <Text style={styles.swipeCueText}>Swipe</Text>
+                    </View>
+                    {item.status !== "completed" ? (
+                      <Pressable
+                        style={styles.completeButton}
+                        onPress={() => void markCompleted(item.id)}
+                      >
+                        <Ionicons name="checkmark" size={14} color="#ffffff" />
+                        <Text style={styles.completeButtonText}>Done</Text>
+                      </Pressable>
+                    ) : (
+                      <View style={styles.completedMark}>
+                        <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                        <Text style={styles.completedText}>Completed</Text>
+                      </View>
+                    )}
+                  </View>
+                </LinearGradient>
+              </Swipeable>
+            );
+          })
         )}
       </ScrollView>
 
@@ -341,7 +436,12 @@ export default function TimelineScreen() {
         style={[styles.fab, { bottom: Math.max(insets.bottom + 12, 24) }]}
         onPress={openCreateComposer}
       >
-        <Text style={styles.fabText}>＋</Text>
+        <LinearGradient
+          colors={["rgba(255,255,255,0.96)", "rgba(220,238,255,0.72)"]}
+          style={styles.fabGlass}
+        >
+          <Ionicons name="add" size={30} color="#0f172a" />
+        </LinearGradient>
       </Pressable>
 
       <Modal
@@ -351,19 +451,38 @@ export default function TimelineScreen() {
         onRequestClose={() => setShowComposer(false)}
       >
         <View style={styles.sheetBackdrop}>
-          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 12, 18) }]}>
-            <Text style={styles.sheetTitle}>
-              {editingId ? "Update obligation" : "New obligation"}
-            </Text>
+          <LinearGradient
+            colors={["rgba(255,255,255,0.98)", "rgba(244,248,252,0.92)"]}
+            style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 12, 18) }]}
+          >
+            <View style={styles.sheetGrabber} />
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>
+                {editingId ? "Update obligation" : "New obligation"}
+              </Text>
+              <Pressable
+                style={styles.sheetClose}
+                onPress={() => {
+                  setShowComposer(false);
+                  resetComposer();
+                }}
+              >
+                <Ionicons name="close" size={18} color="#334155" />
+              </Pressable>
+            </View>
             <TextInput
               style={styles.input}
               placeholder="Title"
+              placeholderTextColor="#94a3b8"
               value={newTitle}
               onChangeText={setNewTitle}
             />
             <Pressable style={styles.dateRow} onPress={() => setShowDatePicker(true)}>
-              <Text style={styles.dateLabel}>Due date</Text>
-              <Text style={styles.dateValue}>{dueDateLabel}</Text>
+              <View>
+                <Text style={styles.dateLabel}>Due date</Text>
+                <Text style={styles.dateValue}>{dueDateLabel}</Text>
+              </View>
+              <Ionicons name="calendar-outline" size={20} color="#0f766e" />
             </Pressable>
             {showDatePicker ? (
               <DateTimePicker
@@ -389,10 +508,15 @@ export default function TimelineScreen() {
                   onPress={() => setNewType(type)}
                   style={[styles.typeChip, newType === type && styles.typeChipActive]}
                 >
+                  <Ionicons
+                    name={KIND_META[type].icon}
+                    size={15}
+                    color={newType === type ? "#ffffff" : KIND_META[type].tint}
+                  />
                   <Text
                     style={[styles.typeChipText, newType === type && styles.typeChipTextActive]}
                   >
-                    {type}
+                    {KIND_META[type].label}
                   </Text>
                 </Pressable>
               ))}
@@ -409,12 +533,13 @@ export default function TimelineScreen() {
                 <Text style={styles.cancelText}>Cancel</Text>
               </Pressable>
               <Pressable style={styles.saveButton} onPress={() => void handleSave()}>
+                <Ionicons name="checkmark" size={17} color="#ffffff" />
                 <Text style={styles.saveText}>
                   {isSaving ? "Saving..." : editingId ? "Update" : "Save"}
                 </Text>
               </Pressable>
             </View>
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
 
@@ -429,12 +554,28 @@ export default function TimelineScreen() {
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: number }) {
+function MetricCard({
+  label,
+  value,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: number;
+  tone: string;
+  icon: IconName;
+}) {
   return (
-    <View style={styles.metricCard}>
+    <LinearGradient
+      colors={["rgba(255,255,255,0.88)", "rgba(255,255,255,0.5)"]}
+      style={styles.metricCard}
+    >
+      <View style={[styles.metricIcon, { backgroundColor: `${tone}18` }]}>
+        <Ionicons name={icon} size={17} color={tone} />
+      </View>
       <Text style={styles.metricValue}>{value}</Text>
       <Text style={styles.metricLabel}>{label}</Text>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -453,148 +594,313 @@ function StatusBadge({ status }: { status: Obligation["status"] }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#e9edf3" },
-  container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 120, gap: 12 },
-  heading: { fontSize: 30, fontWeight: "700", color: "#0f172a" },
-  subheading: { color: "#64748b", marginTop: -2, marginBottom: 4 },
-  bannerText: { color: "#475569", fontSize: 13 },
-  summaryRow: { flexDirection: "row", gap: 10 },
-  metricCard: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.56)",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.72)",
-    padding: 12,
-    shadowColor: "#0f172a",
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+  screen: { flex: 1, backgroundColor: "#eef4fb" },
+  backgroundWash: {
+    ...StyleSheet.absoluteFillObject,
   },
-  metricValue: { fontSize: 24, fontWeight: "700", color: "#0f172a" },
-  metricLabel: { marginTop: 4, color: "#64748b", fontSize: 12 },
-  sectionTitle: { marginTop: 10, fontSize: 18, fontWeight: "600", color: "#0f172a" },
-  emptyCard: {
-    backgroundColor: "rgba(255,255,255,0.56)",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.72)",
-    padding: 16,
+  container: { flex: 1 },
+  content: { padding: 20, paddingBottom: 128, gap: 14 },
+  headerShell: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14,
+    marginTop: 2,
+  },
+  headerTextBlock: { flex: 1 },
+  kicker: {
+    color: "#0f766e",
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  heading: { fontSize: 34, fontWeight: "800", color: "#0f172a", marginTop: 2 },
+  subheading: { color: "#64748b", marginTop: 2 },
+  headerButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    backgroundColor: "rgba(255,255,255,0.62)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.9)",
+    shadowColor: "#64748b",
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
   },
-  emptyText: { color: "#64748b" },
-  swipeContainer: { borderRadius: 16, marginBottom: 10 },
+  bannerPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.82)",
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#14b8a6",
+  },
+  bannerText: { color: "#475569", fontSize: 12, fontWeight: "600" },
+  summaryRow: { flexDirection: "row", gap: 10, marginTop: 2 },
+  metricCard: {
+    flex: 1,
+    minHeight: 104,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.88)",
+    padding: 12,
+    shadowColor: "#64748b",
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+  },
+  metricIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  metricValue: { fontSize: 27, fontWeight: "800", color: "#0f172a" },
+  metricLabel: { marginTop: 3, color: "#64748b", fontSize: 12, fontWeight: "600" },
+  sectionHeader: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  sectionTitle: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
+  sectionHint: { color: "#64748b", fontSize: 12, fontWeight: "600" },
+  emptyCard: {
+    backgroundColor: "rgba(255,255,255,0.64)",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.86)",
+    padding: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    shadowColor: "#64748b",
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  emptyIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(20,184,166,0.14)",
+  },
+  emptyText: { color: "#64748b", fontWeight: "600" },
+  swipeContainer: { borderRadius: 24, marginBottom: 12, overflow: "visible" },
   rowActions: {
+    width: 176,
+    alignItems: "flex-end",
+    justifyContent: "flex-end",
+    marginBottom: 12,
+  },
+  actionTray: {
+    flex: 1,
+    width: 164,
     flexDirection: "row",
     alignItems: "stretch",
     justifyContent: "flex-end",
     gap: 8,
-    paddingLeft: 12,
-    marginBottom: 10,
-  },
-  rowActionButton: {
-    width: 88,
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  rowActionEdit: { backgroundColor: "#334155" },
-  rowActionDelete: { backgroundColor: "#b91c1c" },
-  rowActionText: { color: "#fff", fontWeight: "700", fontSize: 12 },
-  itemCard: {
-    borderRadius: 16,
+    borderRadius: 24,
+    padding: 7,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.72)",
-    backgroundColor: "rgba(255,255,255,0.6)",
-    padding: 14,
-    gap: 8,
+    borderColor: "rgba(255,255,255,0.86)",
     overflow: "hidden",
-    shadowColor: "#0f172a",
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
+    shadowColor: "#64748b",
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
     elevation: 4,
   },
-  glassOverlay: {
+  rowActionButton: {
+    flex: 1,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 5,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.58)",
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 4,
+  },
+  rowActionEdit: { backgroundColor: "rgba(255,255,255,0.74)" },
+  rowActionDelete: { backgroundColor: "#dc2626" },
+  rowActionText: { color: "#0f172a", fontWeight: "800", fontSize: 12 },
+  rowActionDeleteText: { color: "#ffffff" },
+  itemCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.9)",
+    padding: 14,
+    gap: 14,
+    overflow: "hidden",
+    shadowColor: "#64748b",
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5,
+  },
+  glassGlint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255,255,255,0.24)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.95)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   itemTopRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  kindIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
     alignItems: "center",
+    justifyContent: "center",
+  },
+  itemCopy: { flex: 1, gap: 7 },
+  itemTitle: { fontSize: 16, fontWeight: "800", color: "#0f172a", lineHeight: 21 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 7, flexWrap: "wrap" },
+  kindText: { color: "#334155", fontSize: 12, fontWeight: "800" },
+  metaDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "#94a3b8" },
+  itemMeta: { color: "#64748b", fontSize: 12, fontWeight: "600" },
+  itemFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 10,
   },
-  itemTitle: { flex: 1, fontSize: 16, fontWeight: "600", color: "#0f172a" },
-  itemMeta: { color: "#64748b", fontSize: 12 },
+  swipeCue: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    opacity: 0.84,
+  },
+  swipeCueText: { color: "#64748b", fontSize: 12, fontWeight: "700" },
   badge: {
     borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  badgeText: { fontSize: 11, fontWeight: "600", textTransform: "uppercase" },
-  badgePending: { backgroundColor: "#fef3c7" },
-  badgeOverdue: { backgroundColor: "#fee2e2" },
-  badgeDone: { backgroundColor: "#dcfce7" },
-  completeButton: {
-    alignSelf: "flex-start",
-    backgroundColor: "#0f172a",
-    borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
+    borderWidth: 1,
   },
-  completeButtonText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  badgeText: { fontSize: 10, fontWeight: "800", textTransform: "uppercase", color: "#0f172a" },
+  badgePending: { backgroundColor: "rgba(254,243,199,0.82)", borderColor: "rgba(245,158,11,0.22)" },
+  badgeOverdue: { backgroundColor: "rgba(254,226,226,0.88)", borderColor: "rgba(220,38,38,0.2)" },
+  badgeDone: { backgroundColor: "rgba(220,252,231,0.86)", borderColor: "rgba(5,150,105,0.18)" },
+  completeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#0f172a",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  completeButtonText: { color: "#fff", fontSize: 12, fontWeight: "800" },
+  completedMark: { flexDirection: "row", alignItems: "center", gap: 5 },
+  completedText: { color: "#047857", fontSize: 12, fontWeight: "800" },
   fab: {
     position: "absolute",
     right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#0f172a",
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
-  fabText: { color: "#fff", fontSize: 28, lineHeight: 30, fontWeight: "400" },
+  fabGlass: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.95)",
+  },
   sheetBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(15,23,42,0.28)",
+    backgroundColor: "rgba(15,23,42,0.34)",
     justifyContent: "flex-end",
   },
   sheet: {
-    backgroundColor: "rgba(248,250,252,0.94)",
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.8)",
-    padding: 18,
+    borderColor: "rgba(255,255,255,0.92)",
+    padding: 20,
+    gap: 14,
+  },
+  sheetGrabber: {
+    alignSelf: "center",
+    width: 44,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(100,116,139,0.3)",
+    marginBottom: 2,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
   },
-  sheetTitle: { fontSize: 20, fontWeight: "700", color: "#0f172a" },
+  sheetTitle: { fontSize: 22, fontWeight: "800", color: "#0f172a" },
+  sheetClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(226,232,240,0.74)",
+  },
   input: {
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    backgroundColor: "rgba(255,255,255,0.72)",
+    borderColor: "rgba(203,213,225,0.78)",
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+    backgroundColor: "rgba(255,255,255,0.74)",
+    color: "#0f172a",
   },
   dateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: "rgba(255,255,255,0.72)",
+    borderColor: "rgba(203,213,225,0.78)",
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "rgba(255,255,255,0.74)",
     gap: 2,
   },
   dateLabel: {
@@ -603,39 +909,45 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     fontWeight: "600",
   },
-  dateValue: { fontSize: 15, color: "#0f172a", fontWeight: "600" },
+  dateValue: { fontSize: 16, color: "#0f172a", fontWeight: "800", marginTop: 3 },
   typeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   typeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: "rgba(203,213,225,0.8)",
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "rgba(255,255,255,0.72)",
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    backgroundColor: "rgba(255,255,255,0.74)",
   },
   typeChipActive: {
     borderColor: "#0f172a",
     backgroundColor: "#0f172a",
   },
-  typeChipText: { color: "#334155", fontSize: 12, textTransform: "capitalize" },
+  typeChipText: { color: "#334155", fontSize: 12, fontWeight: "800" },
   typeChipTextActive: { color: "#fff" },
   sheetButtons: { flexDirection: "row", gap: 10, marginTop: 4 },
   cancelButton: {
     flex: 1,
-    borderRadius: 10,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: "rgba(203,213,225,0.86)",
     alignItems: "center",
-    paddingVertical: 11,
-    backgroundColor: "rgba(255,255,255,0.7)",
+    paddingVertical: 13,
+    backgroundColor: "rgba(255,255,255,0.78)",
   },
-  cancelText: { color: "#334155", fontWeight: "600" },
+  cancelText: { color: "#334155", fontWeight: "800" },
   saveButton: {
     flex: 1,
-    borderRadius: 10,
-    backgroundColor: "#0f172a",
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 11,
+    justifyContent: "center",
+    gap: 5,
+    borderRadius: 16,
+    backgroundColor: "#0f172a",
+    paddingVertical: 13,
   },
-  saveText: { color: "#fff", fontWeight: "700" },
+  saveText: { color: "#fff", fontWeight: "800" },
 });
