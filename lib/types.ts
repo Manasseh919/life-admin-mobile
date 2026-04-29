@@ -17,8 +17,8 @@ export type AuthResponse = {
 
 export type Obligation = {
   id: string;
-  kind: "bill" | "subscription" | "document";
+  kind: "bill" | "subscription" | "document" | "other";
   title: string;
   dueAt: string;
-  status: "upcoming" | "overdue";
+  status: "pending" | "completed" | "overdue";
 };
