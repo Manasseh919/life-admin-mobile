@@ -1,98 +1,180 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { FeedbackModal } from "@/components/feedback-modal";
+import { useAuth } from "@/context/auth-context";
+import { getObligations } from "@/lib/api";
+import type { Obligation } from "@/lib/types";
 
-export default function HomeScreen() {
+export default function TimelineScreen() {
+  const { user, getValidAccessToken, logout } = useAuth();
+  const [obligations, setObligations] = useState<Obligation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [bannerMessage, setBannerMessage] = useState<string | null>(null);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    type: "success" | "error";
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: "success",
+    title: "",
+    message: "",
+  });
+
+  const loadObligations = useCallback(async () => {
+    setIsLoading(true);
+    setBannerMessage("Syncing obligations...");
+    try {
+      const accessToken = await getValidAccessToken();
+      const data = await getObligations(accessToken);
+      setObligations(data);
+      setBannerMessage(`Loaded ${data.length} obligations.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to load obligations.";
+      setBannerMessage("Could not sync obligations.");
+      setModal({
+        visible: true,
+        type: "error",
+        title: "Sync failed",
+        message,
+      });
+      if (message.includes("No active session")) {
+        await logout();
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getValidAccessToken, logout]);
+
+  useEffect(() => {
+    void loadObligations();
+  }, [loadObligations]);
+
+  const summary = useMemo(() => {
+    const overdue = obligations.filter((item) => item.status === "overdue").length;
+    return {
+      upcoming: obligations.length - overdue,
+      overdue,
+    };
+  }, [obligations]);
+
+  const prettyDueLabel = useCallback((dueAt: string) => {
+    const date = new Date(dueAt);
+    return `Due ${date.toLocaleDateString()}`;
+  }, []);
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.heading}>Life Admin Timeline</Text>
+      <Text style={styles.subheading}>Welcome back, {user?.email}</Text>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      {bannerMessage ? (
+        <View style={styles.banner}>
+          {isLoading ? <ActivityIndicator size="small" color="#1d4ed8" /> : null}
+          <Text style={styles.bannerText}>{bannerMessage}</Text>
+        </View>
+      ) : null}
+
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryValue}>{summary.upcoming}</Text>
+          <Text style={styles.summaryLabel}>Upcoming</Text>
+        </View>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryValue}>{summary.overdue}</Text>
+          <Text style={styles.summaryLabel}>Overdue</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionTitle}>What needs attention</Text>
+      {isLoading ? (
+        <View style={styles.itemCard}>
+          <Text style={styles.itemDue}>Loading obligations...</Text>
+        </View>
+      ) : obligations.length === 0 ? (
+        <View style={styles.itemCard}>
+          <Text style={styles.itemDue}>No obligations yet.</Text>
+        </View>
+      ) : (
+        obligations.map((item) => (
+          <View key={item.id} style={styles.itemCard}>
+            <Text style={styles.itemKind}>{item.kind}</Text>
+            <Text style={styles.itemTitle}>{item.title}</Text>
+            <Text style={styles.itemDue}>{prettyDueLabel(item.dueAt)}</Text>
+          </View>
+        ))
+      )}
+
+      <Pressable style={styles.reloadButton} onPress={() => void loadObligations()}>
+        <Text style={styles.reloadButtonText}>Refresh timeline</Text>
+      </Pressable>
+
+      <FeedbackModal
+        visible={modal.visible}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        onClose={() => setModal((prev) => ({ ...prev, visible: false }))}
+      />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  container: { flex: 1, backgroundColor: "#f9fafb" },
+  content: { padding: 20, gap: 12 },
+  heading: { fontSize: 28, fontWeight: "700", color: "#111827" },
+  subheading: { fontSize: 15, color: "#4b5563" },
+  banner: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
+    backgroundColor: "#dbeafe",
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  bannerText: {
+    color: "#1f2937",
+    fontSize: 14,
+    fontWeight: "500",
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  summaryRow: { flexDirection: "row", gap: 10, marginTop: 6 },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 14,
+  },
+  summaryValue: { fontSize: 24, fontWeight: "700", color: "#111827" },
+  summaryLabel: { marginTop: 2, color: "#6b7280" },
+  sectionTitle: { marginTop: 14, fontSize: 18, fontWeight: "600", color: "#111827" },
+  itemCard: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 12,
+    padding: 14,
+    gap: 4,
+  },
+  itemKind: { fontSize: 12, color: "#6b7280", textTransform: "uppercase" },
+  itemTitle: { fontSize: 16, fontWeight: "600", color: "#111827" },
+  itemDue: { fontSize: 14, color: "#374151" },
+  reloadButton: {
+    marginTop: 8,
+    backgroundColor: "#111827",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  reloadButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
